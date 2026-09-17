@@ -15,28 +15,37 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # FAILURE 1: No registry authentication step before pushing.
-      # The push below will fail with "401 authentication required".
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USER }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          # FAILURE 2: Wrong image tag. Not namespaced to the Docker Hub
-          # user and not tagged with the commit SHA.
-          tags: myapp:latest
+          tags: ${{ secrets.DOCKERHUB_USER }}/app:${{ github.sha }}
 
-  # FAILURE 3: Deploy job does not wait for the build job to finish.
-  # It runs in parallel and tries to use an image that was never pushed.
   deploy:
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USER }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Deploy with Docker Compose
+        env:
+          IMAGE: ${{ secrets.DOCKERHUB_USER }}/app:${{ github.sha }}
         run: |
-          docker compose up -d
+          docker compose pull
+          docker compose up -d --no-build
           sleep 5
           curl -f http://localhost:8080/health
