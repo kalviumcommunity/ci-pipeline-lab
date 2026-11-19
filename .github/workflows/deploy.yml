@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   build:
+    name: Build and Push Docker Image
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -15,28 +17,51 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # FAILURE 1: No registry authentication step before pushing.
-      # The push below will fail with "401 authentication required".
+      # Stage 2: Docker Authentication
+      # Fix for Failure 1 (401 Unauthorized):
+      # Authenticate to Docker Hub using repository secrets DOCKERHUB_USER and DOCKERHUB_TOKEN.
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USER }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # Stage 3 & 4: Docker Image Build & Push
+      # Fix for Failure 2 (Bad tag/name):
+      # Namespaces image with Docker Hub username and tags with immutable full Git commit SHA.
       - name: Build and push image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          # FAILURE 2: Wrong image tag. Not namespaced to the Docker Hub
-          # user and not tagged with the commit SHA.
-          tags: myapp:latest
+          tags: |
+            ${{ secrets.DOCKERHUB_USER }}/app:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USER }}/app:latest
 
-  # FAILURE 3: Deploy job does not wait for the build job to finish.
-  # It runs in parallel and tries to use an image that was never pushed.
+  # Stage 5: Deployment
+  # Fix for Failure 3 (Sequencing / Race condition):
+  # 'needs: build' ensures deployment only executes after build and push succeed.
   deploy:
+    name: Deploy and Health Check
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USER }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Deploy with Docker Compose
+        env:
+          IMAGE: ${{ secrets.DOCKERHUB_USER }}/app:${{ github.sha }}
         run: |
+          docker compose pull
           docker compose up -d
           sleep 5
+          curl -i http://localhost:8080/health
           curl -f http://localhost:8080/health
+
