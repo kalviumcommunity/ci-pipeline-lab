@@ -27,13 +27,22 @@ A minimal Node.js HTTP service.
 GET /health  ->  200  {"status":"ok"}
 ```
 
-Run it locally to confirm behaviour:
+Build and run it locally to confirm behaviour:
 
 ```bash
-docker compose up --build
+docker build -t app:local .
+```
+
+In PowerShell:
+
+```powershell
+$env:IMAGE = "app:local"
+docker compose up -d
 curl http://localhost:8080/health
 # {"status":"ok"}
 ```
+
+In Bash, set `IMAGE=app:local` for the `docker compose up -d` command.
 
 ---
 
